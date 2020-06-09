@@ -1,0 +1,7 @@
+asyncio==3.4.3
+imageio==2.8.0
+lz4==3.0.2
+matplotlib==3.2.1
+numpy==1.16.0
+python-osc==1.7.4
+tensorflow==2.1.0
