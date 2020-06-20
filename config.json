@@ -1,7 +1,0 @@
-{
-    "name": "neatures-learning",
-    "client.host": "127.0.0.1",
-    "client.port": "1024",
-    "server.host": "127.0.0.1",
-    "server.port": "1025"
-}

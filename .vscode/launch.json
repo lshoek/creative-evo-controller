@@ -9,15 +9,8 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            //"args" : ["--host", "127.0.0.1", --port, "1024"],
+            "args" : ["--timelimit", "60", "--pop_size", "8", "--threads", "1"],
             "console": "integratedTerminal"
         },
-        {
-            "name": "DebugAutoEncoder",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/autoenc.py",
-            "console": "integratedTerminal"
-        }
     ]
 }

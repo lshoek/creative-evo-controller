@@ -1,15 +1,19 @@
 import tensorflow as tf
 import numpy as np
+import json
 
 class SketchAutoEncoder(tf.keras.Model):
     def __init__(self):
         super(SketchAutoEncoder, self).__init__()
-        
-        self.latent_dim = 8
 
+        with open('conf/enc.json') as f:
+            config = json.load(f)
+            self.size = config.get('input.size')
+            self.latent_dim = config.get('latent.dim')
+        
         self.encoder = tf.keras.models.Sequential(
             [
-                tf.keras.layers.InputLayer(input_shape=(16, 16, 1)),
+                tf.keras.layers.InputLayer(input_shape=(self.size, self.size, 1)),
                 tf.keras.layers.Conv2D(
                     16, (3, 3), activation='relu', padding='same'),
                 tf.keras.layers.MaxPooling2D((2, 2), padding='same'),
@@ -39,7 +43,7 @@ class SketchAutoEncoder(tf.keras.Model):
         #self.autoencoder.compile(optimizer='adadelta', loss=['binary_crossentropy'])
 
     def encode(self, x):
-        x = np.reshape(x, (1, 16, 16, 1))
+        x = np.reshape(x, (1, self.size, self.size, 1))
         return self.encoder(x)
 
     def decode(self, x):
