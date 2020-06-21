@@ -8,7 +8,7 @@ class Controller(nn.Module):
         self.fc2 = nn.Linear(16, output_size)
 
     def forward(self, *inputs):
-        cat_in = torch.cat(inputs, dim=1)
+        cat_in = torch.cat(inputs, dim=0)
         x = self.fc1(cat_in)
         x = self.fc2(x)
         return x

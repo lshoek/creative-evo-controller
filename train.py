@@ -33,7 +33,7 @@ class RolloutGenerator(object):
         self.time_limit = time_limit
 
         self.auto = AutoEncoder(LATENT_SIZE)
-        self.controller = Controller(LATENT_SIZE, self.num_outputs)
+        self.controller = Controller(LATENT_SIZE + self.num_joints, self.num_outputs)
 
         # print(self.auto)
         # print(self.controller)
@@ -41,7 +41,7 @@ class RolloutGenerator(object):
 
     def get_action(self, obs, bodystate):
         latent = self.auto.cuda().encode(obs.cuda())
-        action = self.controller.cuda().forward(latent)
+        action = self.controller.cuda().forward(latent.flatten(), bodystate.cuda().flatten())
         return action.squeeze().cpu().numpy()
 
     def do_rollout(self, generation, id, render=False, early_termination=True):

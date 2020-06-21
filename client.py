@@ -20,6 +20,7 @@ OSC_BYE = "/bye"
 OSC_INFO = "/info"
 OSC_ACTIVATION = "/act"
 OSC_FITNESS = "/fit"
+OSC_JOINTS = "/jnts"
 
 OSC_ARTIFACT_START = "/art/start/"
 OSC_ARTIFACT_PART = "/art/part/"
@@ -29,6 +30,7 @@ OSC_SIZE = 2048
 class Client():
 	def __init__(self, host=None, inport=None, outport=None, obs_size=256):
 		self.action_queue = []
+		self.joints_queue = []
 		self.obs_queue = []
 		self.obs_parts = []
 		self.obs_size = obs_size
@@ -53,12 +55,14 @@ class Client():
 		self.handshake = True
 		self.finished = False
 		self.terminate = False
+		self.save_obs = True
 
 		self.dispatcher = Dispatcher()
 		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
 		self.dispatcher.map(f'{OSC_BYE}*', self.__dispatch_bye, self)
 		self.dispatcher.map(f'{OSC_INFO}*', self.__dispatch_info, self)
 		self.dispatcher.map(f'{OSC_FITNESS}*', self.__dispatch_fitness, self)
+		self.dispatcher.map(f'{OSC_JOINTS}*', self.__dispatch_joints_packets, self)
 		self.dispatcher.map(f'{OSC_ARTIFACT_START}*', self.__dispatch_start_packets, self)
 		self.dispatcher.map(f'{OSC_ARTIFACT_PART}*', self.__dispatch_append_packets, self)
 		self.dispatcher.map(f'{OSC_ARTIFACT_END}*', self.__dispatch_process_packets, self)
@@ -99,16 +103,18 @@ class Client():
 
 		data_uncomp = lz4.frame.decompress(data)
 		im = np.frombuffer(data_uncomp, dtype=np.int8)
-
-		im = np.reshape(im, (1, 1, self.obs_size, self.obs_size))
+		if self.save_obs:	
+			save_im(np.reshape(im, (self.obs_size, self.obs_size)))
+			#self.__visualize_debug(im)
+		im = np.reshape(im, (1, 1, self.obs_size, self.obs_size))	
 		im = im.astype(np.float32)
 		im = torch.from_numpy(im)
-
 		self.obs_queue.append((creature_id, im))
 
-		#im = np.reshape(im, (self.autoencoder.size, self.autoencoder.size))
-		#save_im(im)
-		#self.__visualize_debug(im)
+	def __dispatch_joints_packets(self, addr, args, packets=None):
+		data = np.frombuffer(packets, dtype=np.float32)
+		state = torch.from_numpy(data)
+		self.joints_queue.append(state)
 
 	def __send_msg(self, addr, msg):
 		self.client.send_message(addr, msg)
@@ -137,9 +143,9 @@ class Client():
 					self.action_queue = []
 
 				# handle observations
-				if len(self.obs_queue) > 0:
+				if len(self.obs_queue) > 0 and len(self.joints_queue) > 0:
 					creature_id, obs = self.obs_queue.pop()
-					bodystate = np.zeros(rollout_gen.num_joints)
+					bodystate = self.joints_queue.pop()
 					action = rollout_gen.get_action(obs, bodystate)
 
 					self.action_queue.append((creature_id, action))
