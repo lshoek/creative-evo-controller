@@ -12,6 +12,7 @@ import imageio
 import json
 import math
 import time
+import random
 import torch
 import lz4.frame
 
@@ -21,11 +22,18 @@ OSC_INFO = "/info"
 OSC_ACTIVATION = "/act"
 OSC_FITNESS = "/fit"
 OSC_JOINTS = "/jnts"
+OSC_PULSE = "/pls"
 
 OSC_ARTIFACT_START = "/art/start/"
 OSC_ARTIFACT_PART = "/art/part/"
 OSC_ARTIFACT_END = "/art/end/"
 OSC_SIZE = 2048
+
+def norm01(x):
+	return (x+1.0)*0.5
+
+def cpg(t):
+	return norm01(math.sin(np.float(t)))
 
 class Client():
 	def __init__(self, host=None, inport=None, outport=None, obs_size=256):
@@ -47,15 +55,16 @@ class Client():
 			self.outport = int(outport)
 
 		self.client = SimpleUDPClient(self.host, self.outport)
-		self.time_limit = 60
-		self.id = 0
-		self.generation = 0
-		self.fitness = 0
+
+		self.internal_time = 0.0
+		self.internal_timestep = 1.0
 
 		self.handshake = True
 		self.finished = False
 		self.terminate = False
 		self.save_obs = True
+
+		self.fitness = 0
 
 		self.dispatcher = Dispatcher()
 		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
@@ -70,8 +79,9 @@ class Client():
 
 	def __dispatch_hello(self, addr, args, packets=None):
 		if self.handshake:
-			self.__send_msg(OSC_HELLO, 0)
+			self.client.send_message(OSC_HELLO, 0)
 			self.handshake = False
+			self.clock = time.time()
 
 	def __dispatch_bye(self, addr, args, packets=None):
 		self.terminate = True
@@ -84,7 +94,7 @@ class Client():
 		if canvas_height != self.obs_size:
 			print(f'Error: VAE input size ({canvas_height}) and canvas size ({self.obs_size}) mismatch!')
 
-		self.__send_msg(f'{OSC_INFO}/{self.id}/{self.generation}/{self.time_limit}', 0)
+		self.client.send_message(f'{OSC_INFO}/{self.id}/{self.eval_id}/{self.generation}/{self.time_limit}', 0)
 
 	def __dispatch_fitness(self, addr, args, packets=None):
 		self.fitness = packets
@@ -116,12 +126,10 @@ class Client():
 		state = torch.from_numpy(data)
 		self.joints_queue.append(state)
 
-	def __send_msg(self, addr, msg):
-		self.client.send_message(addr, msg)
-
 	def __send_activation(self, msg):
-		creature_id, output = msg
+		creature_id, output, pulse = msg
 		self.client.send_message(f'{OSC_ACTIVATION}/{creature_id}', output.tobytes())
+		self.client.send_message(f'{OSC_PULSE}/{creature_id}', pulse)
 		#print(f'[->] sent {len(output.tobytes())} bytes ({output})')
 
 	def __visualize_debug(self, im):
@@ -130,6 +138,11 @@ class Client():
 		plt.pause(0.001)
 		plt.show()
 		print(im)
+
+	def __activate(self, rollout_gen, obs, bodystate, pulse):		
+		pulse_tensor = torch.tensor([pulse])
+		action = rollout_gen.get_action(obs, bodystate, pulse_tensor)
+		return action
 
 	async def __loop(self, rollout_gen):
 		i = 0
@@ -146,9 +159,14 @@ class Client():
 				if len(self.obs_queue) > 0 and len(self.joints_queue) > 0:
 					creature_id, obs = self.obs_queue.pop()
 					bodystate = self.joints_queue.pop()
-					action = rollout_gen.get_action(obs, bodystate)
+					self.internal_time += self.internal_timestep
 
-					self.action_queue.append((creature_id, action))
+					pulse_in = cpg(self.internal_time)
+					action = self.__activate(rollout_gen, obs, bodystate, pulse_in)
+					pulse_out = norm01(action[-1])*math.pi
+					
+					self.internal_timestep = pulse_out
+					self.action_queue.append((creature_id, action[:-1], pulse_in))
 					self.obs_queue = []
 					
 					i += 1
@@ -166,13 +184,15 @@ class Client():
 		await self.__loop(rollout_gen)
 		transport.close()
 
-	def start(self, generation, id, rollout_gen):
+	def start(self, generation, id, eval_id, rollout_gen):
 		self.time_limit = rollout_gen.time_limit
+		self.prev_action = np.random.rand(rollout_gen.output_size).astype(np.float32)
 		self.generation = generation
 		self.id = id
+		self.eval_id = eval_id
 
 		print(f'Started {generation}:{id}')
 		asyncio.run(self.__start(rollout_gen))
 
 		print(f'Finished {generation}:{id} / fitness: {self.fitness}')
-		return self.fitness, 0
+		return self.fitness

@@ -16,9 +16,9 @@ class Decoder(nn.Module):
     def forward(self, x):
         x = func.relu(self.fc1(x))
         x = x.unsqueeze(-1).unsqueeze(-1)
-        x = func.relu(self.deconv1(x))
-        x = func.relu(self.deconv2(x))
-        x = func.relu(self.deconv3(x))
+        x = torch.relu(self.deconv1(x))
+        x = torch.relu(self.deconv2(x))
+        x = torch.relu(self.deconv3(x))
 
         reconstr = torch.sigmoid(self.deconv4(x))
         return reconstr
@@ -35,10 +35,10 @@ class Encoder(nn.Module):
         self.fc = nn.Linear(m, latent_size)
 
     def forward(self, x):
-        x = func.relu(self.conv1(x))
-        x = func.relu(self.conv2(x))
-        x = func.relu(self.conv3(x))
-        x = func.relu(self.conv4(x))
+        x = torch.relu(self.conv1(x))
+        x = torch.relu(self.conv2(x))
+        x = torch.relu(self.conv3(x))
+        x = torch.relu(self.conv4(x))
         x = x.view(x.size(0), -1)
 
         latent = self.fc(x)

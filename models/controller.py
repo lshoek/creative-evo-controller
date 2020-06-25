@@ -9,6 +9,6 @@ class Controller(nn.Module):
 
     def forward(self, *inputs):
         cat_in = torch.cat(inputs, dim=0)
-        x = self.fc1(cat_in)
-        x = self.fc2(x)
+        x = torch.relu(self.fc1(cat_in))
+        x = torch.tanh(self.fc2(x))
         return x

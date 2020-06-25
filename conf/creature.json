@@ -1,5 +1,6 @@
 {
     "obs.size": 64,
-    "joints.size": 3,
-    "brushes.size": 1
+    "joints.size": 5,
+    "brushes.size": 1,
+    "cpg.enabled": true
 }
