@@ -8,6 +8,7 @@ import random
 from ga import GA
 
 torch.set_num_threads(1)
+torch.set_printoptions(precision=4)
 
 def parse_args():
     parser = argparse.ArgumentParser()

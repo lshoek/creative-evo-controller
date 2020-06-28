@@ -1,6 +1,8 @@
 # App specific
 /results
-/data
+/data/obs/data/
+/data/obs/temp/
+/models/compressor/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

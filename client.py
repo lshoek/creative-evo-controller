@@ -8,7 +8,7 @@ from utils import load_im
 import matplotlib.pyplot as plt
 import numpy as np
 import asyncio
-import imageio
+import collections
 import json
 import math
 import time
@@ -29,6 +29,10 @@ OSC_ARTIFACT_PART = "/art/part/"
 OSC_ARTIFACT_END = "/art/end/"
 OSC_SIZE = 2048
 
+EPS = 1e-3
+PULSE_BOUND = math.pi
+PULSE_MINMAX = [-PULSE_BOUND+EPS, PULSE_BOUND-EPS]
+
 def norm01(x):
 	return (x+1.0)*0.5
 
@@ -36,7 +40,7 @@ def cpg(t):
 	return norm01(math.sin(np.float(t)))
 
 class Client():
-	def __init__(self, host=None, inport=None, outport=None, obs_size=256):
+	def __init__(self, host=None, inport=None, outport=None, obs_size=64):
 		self.action_queue = []
 		self.joints_queue = []
 		self.obs_queue = []
@@ -44,7 +48,7 @@ class Client():
 		self.obs_size = obs_size
 
 		if (host==None or inport==None or outport==None):
-			with open('conf/osc.json') as f:
+			with open('config/osc.json') as f:
 				config = json.load(f)
 				self.host = config.get('client.host')
 				self.inport = int(config.get('client.port'))
@@ -56,15 +60,13 @@ class Client():
 
 		self.client = SimpleUDPClient(self.host, self.outport)
 
-		self.internal_time = 0.0
-		self.internal_timestep = 1.0
-
 		self.handshake = True
 		self.finished = False
 		self.terminate = False
 		self.save_obs = True
 
 		self.fitness = 0
+		self.internal_clock = 0.0
 
 		self.dispatcher = Dispatcher()
 		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
@@ -113,7 +115,7 @@ class Client():
 
 		data_uncomp = lz4.frame.decompress(data)
 		im = np.frombuffer(data_uncomp, dtype=np.int8)
-		if self.save_obs:	
+		if self.save_obs:
 			save_im(np.reshape(im, (self.obs_size, self.obs_size)))
 			#self.__visualize_debug(im)
 		im = np.reshape(im, (1, 1, self.obs_size, self.obs_size))	
@@ -159,13 +161,12 @@ class Client():
 				if len(self.obs_queue) > 0 and len(self.joints_queue) > 0:
 					creature_id, obs = self.obs_queue.pop()
 					bodystate = self.joints_queue.pop()
-					self.internal_time += self.internal_timestep
 
-					pulse_in = cpg(self.internal_time)
+					pulse_in = cpg(self.internal_clock)
 					action = self.__activate(rollout_gen, obs, bodystate, pulse_in)
-					pulse_out = norm01(action[-1])*math.pi
-					
-					self.internal_timestep = pulse_out
+					pulse_out = action[-1]
+
+					self.internal_clock += np.interp(abs(pulse_out), [-1.0, 1.0], PULSE_MINMAX)
 					self.action_queue.append((creature_id, action[:-1], pulse_in))
 					self.obs_queue = []
 					

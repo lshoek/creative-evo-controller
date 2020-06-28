@@ -9,7 +9,23 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args" : ["--timelimit", "60", "--pop_size", "32", "--threads", "1"],
+            "args" : ["--timelimit", "120", "--pop_size", "32", "--threads", "1"],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "TrainAutoEncoder_Debug",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/models/trainer.py",
+            "args" : [""],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "TrainAutoEncoder_Release",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/models/trainer.py",
+            "args" : ["-c", "Release"],
             "console": "integratedTerminal"
         },
     ]

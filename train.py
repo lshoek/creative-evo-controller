@@ -8,12 +8,9 @@ import numpy as np
 from torchvision import transforms
 from multiprocessing import Lock
 
-from models.autoenc import AutoEncoder
+from models.vae import VAE
 from models.controller import Controller
 from client import Client
-
-OBS_SIZE = 64
-LATENT_SIZE = 32
 
 def init_weights(m):
     if type(m) == torch.nn.Linear:
@@ -21,19 +18,18 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 class RolloutGenerator(object):
-    def __init__(self, device, time_limit):
+    def __init__(self, config, compressor, device, time_limit):
+        latent_size = config.get('vae.latent.size')
+        obs_size = config.get('vae.obs.size')
 
-        with open('conf/creature.json') as f:
-            config = json.load(f)
-            self.obs_size = config.get('obs.size')
-            self.num_joints = config.get('joints.size')
-            self.num_brushes = config.get('brushes.size')
-            self.cpg_enabled = config.get('cpg.enabled')
+        self.num_joints = config.get('joints.size')
+        self.num_brushes = config.get('brushes.size')
+        self.cpg_enabled = config.get('cpg.enabled')
 
-            self.output_size = self.num_joints + self.num_brushes
-            self.input_size = self.num_joints + LATENT_SIZE
+        self.output_size = self.num_joints + self.num_brushes
+        self.input_size = self.num_joints + latent_size
 
-        self.client = Client(obs_size=OBS_SIZE)
+        self.client = Client(obs_size=obs_size)
 
         self.device = device
         self.time_limit = time_limit
@@ -43,20 +39,20 @@ class RolloutGenerator(object):
             self.input_size = self.input_size + 1
             self.output_size = self.output_size + 1
 
-        # pre-trained auto encoder from disk?
-        self.auto = AutoEncoder(LATENT_SIZE)
+        # compressor model
+        self.vae = compressor
 
         # controller is trained on the go
         self.controller = Controller(self.input_size, self.output_size).cuda()
         self.controller.apply(init_weights).cuda()
 
-        # print(self.auto)
+        # print(self.vae)
         # print(self.controller)
 
     def get_action(self, obs, bodystate, pulse):
         bodystate_comp = torch.cat((bodystate, pulse)) if self.cpg_enabled else bodystate
-        latent = self.auto.cuda().encode(obs.cuda())
-        action = self.controller.cuda().forward(latent.flatten(), bodystate_comp.cuda().flatten())
+        latent_mu, _ = self.vae.cuda().encoder(obs.cuda())
+        action = self.controller.cuda().forward(latent_mu.flatten(), bodystate_comp.cuda().flatten())
         
         return action.squeeze().cpu().numpy()
 
@@ -76,14 +72,15 @@ class GAIndividual():
 
     multi = flag to switch multiprocessing on or off
     '''
-    def __init__(self, device, time_limit, multi=False):
+    def __init__(self, config, compressor, device, time_limit, multi=False):
+        self.config = config
         self.device = device
         self.time_limit = time_limit
         self.multi = multi
 
         self.mutation_power = 0.01 
 
-        self.rollout_gen = RolloutGenerator(device, time_limit)
+        self.rollout_gen = RolloutGenerator(config, compressor, device, time_limit)
 
         self.async_results = []
         self.calculated_results = {}
@@ -130,18 +127,15 @@ class GAIndividual():
 
         s = torch.load(filename)
 
-        self.rollout_gen.auto.load_state_dict( s['vae'])
+        self.rollout_gen.vae.load_state_dict( s['vae'])
         self.rollout_gen.controller.load_state_dict( s['controller'])
 
     
     def clone_individual(self):
-        child_solution = GAIndividual(self.device, self.time_limit, multi=True)
-        child_solution.multi = self.multi
-
+        child_solution = GAIndividual(self.config, self.rollout_gen.vae, self.device, self.time_limit, self.multi)
         child_solution.fitness = self.fitness
-
         child_solution.rollout_gen.controller = copy.deepcopy (self.rollout_gen.controller)
-        child_solution.rollout_gen.auto = copy.deepcopy (self.rollout_gen.auto)
+        #child_solution.rollout_gen.vae = copy.deepcopy (self.rollout_gen.vae)
         
         return child_solution
     
@@ -151,4 +145,4 @@ class GAIndividual():
 
     def mutate(self):
         self.mutate_params(self.rollout_gen.controller.state_dict())
-        #self.mutate_params(self.rollout_gen.auto.state_dict())
+        #self.mutate_params(self.rollout_gen.vae.state_dict())

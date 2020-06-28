@@ -8,28 +8,40 @@ from os.path import join, exists
 import multiprocessing
 import gc
 import copy
+import json
 
 class GA:
     def __init__(self, elite_evals, top, threads, timelimit, pop_size, device):
-        '''
-        Constructor. 
-        '''
-        self.top  = top  #Number of top individuals that should be reevaluated
-        self.elite_evals = elite_evals  #Number of times  the top individuals should be evaluated
+        self.top  = top  # Number of top individuals that should be reevaluated
+        self.elite_evals = elite_evals  # Number of times  the top individuals should be evaluated
 
         self.pop_size = pop_size
 
         self.threads = threads
         multi_process = threads>1
 
-        self.truncation_threshold = int(pop_size/2)  #Should be dividable by two
+        self.truncation_threshold = int(pop_size/2)  # Should be dividable by two
         self.P = []
+
+        with open('config/creature.json') as f:
+            config = json.load(f)
+            model_fromdisk = config.get('vae.model.fromdisk')
+            model_path = config.get('vae.model.path')
+            latent_size = config.get('vae.latent.size')
+
+        from models.vae import VAE
+        vae = VAE(latent_size).cuda()
+
+        if model_fromdisk:
+            vae.load_state_dict(torch.load(model_path))
+            vae.eval() # inference mode
+            print(f'Loaded VAE model {model_path} from disk')
 
         print(f'Generating initial population of {pop_size} condidates...')
 
         from train import GAIndividual
-        for i in range(pop_size):
-            self.P.append(GAIndividual(device, timelimit, multi= multi_process))
+        for _ in range(pop_size):
+            self.P.append(GAIndividual(config, compressor=vae, device=device, time_limit=timelimit, multi=multi_process))
 
         
     def run(self, max_generations, filename, folder):
@@ -50,12 +62,11 @@ class GA:
         #Load previously saved population
         if exists( pop_name ):
             pop_tmp = torch.load(pop_name)
-
             print("Loading existing population ",pop_name, len(pop_tmp))
 
             idx = 0
             for s in pop_tmp:
-                 P[idx].rollout_gen.auto.load_state_dict ( s['autoencoder'].copy() )
+                 P[idx].rollout_gen.auto.load_state_dict ( s['vae'].copy() )
                  P[idx].rollout_gen.controller.load_state_dict ( s['controller'].copy() )
 
                  i = s['generation'] + 1
@@ -108,7 +119,7 @@ class GA:
                     sys.stdout.flush()
                     
                     torch.save({
-                        'autoencoder': elite.rollout_gen.auto.state_dict(), 
+                        'vae': elite.rollout_gen.auto.state_dict(), 
                         'controller': elite.rollout_gen.controller.state_dict(), 
                         'fitness':f
                     }, "{0}/best_{1}G{2}.p".format(folder, filename, i))
@@ -133,7 +144,7 @@ class GA:
                  ind_fitness_file.flush()
 
                  save_pop += [{
-                     'autoencoder': s.rollout_gen.auto.state_dict(), 
+                     'vae': s.rollout_gen.auto.state_dict(), 
                      'controller': s.rollout_gen.controller.state_dict(), 
                      'fitness':fitness, 'generation':i
                 }]
