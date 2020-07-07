@@ -1,7 +1,6 @@
 # App specific
 /results
-/data/obs/data/
-/data/obs/temp/
+/data/
 /models/compressor/
 
 # Byte-compiled / optimized / DLL files

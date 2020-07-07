@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument('--test', type=str, default='', metavar='N',
         help='0 = no protection, 1 = protection')
 
-    parser.add_argument('--folder', type=str, default='results', metavar='N',
+    parser.add_argument('--folder', type=str, default='results/sim', metavar='N',
         help='folder to store results')
 
     parser.add_argument('--top', type=int, default=3, metavar='N',

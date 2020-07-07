@@ -1,9 +1,10 @@
 {
     "vae.model.path": "models/compressor/conv_vae_28_06_2020.pth",
-    "vae.model.fromdisk": false,
+    "vae.model.fromdisk": true,
     "vae.obs.size": 64,
     "vae.latent.size": 64,
     "joints.size": 7,
     "brushes.size": 1,
+    "vision.local": false,
     "cpg.enabled": true
 }

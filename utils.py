@@ -14,14 +14,18 @@ def save_im(im):
         img = Image.fromarray(im)
         img.convert('RGB').save(path)
 
-def load_im():
-    files = os.listdir(OBS_DATA)
-    if (len(files) > 0):
-        img = Image.open(f'{OBS_DATA}{files[0]}').convert('LA')
-        im = np.asarray(img, dtype=np.float32)
-        return im
+def load_im(path=None, id=0, normalize=True):
+    if not path:
+        files = os.listdir(OBS_DATA)
+        if (len(files) > 0):
+            _path = f'{OBS_DATA}{files[id]}'
+        else: return None
     else:
-        return None
+        _path = path
+    
+    img = Image.open(_path).convert('L')
+    im = np.asarray(img, dtype=np.float32)
+    return im/255.0 if normalize else im
 
 def clean():
     proc.call(['image-cleaner', OBS_TEMP])

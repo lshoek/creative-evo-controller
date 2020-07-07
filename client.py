@@ -29,9 +29,9 @@ OSC_ARTIFACT_PART = "/art/part/"
 OSC_ARTIFACT_END = "/art/end/"
 OSC_SIZE = 2048
 
-EPS = 1e-3
-PULSE_BOUND = math.pi
-PULSE_MINMAX = [-PULSE_BOUND+EPS, PULSE_BOUND-EPS]
+TIMESTEP_EPSILON = 1e-3
+TIMESTEP_BOUND = math.pi
+TIMESTEP_MAX = TIMESTEP_BOUND-TIMESTEP_EPSILON
 
 def norm01(x):
 	return (x+1.0)*0.5
@@ -46,6 +46,7 @@ class Client():
 		self.obs_queue = []
 		self.obs_parts = []
 		self.obs_size = obs_size
+		self.last_obs = np.zeros((obs_size, obs_size))
 
 		if (host==None or inport==None or outport==None):
 			with open('config/osc.json') as f:
@@ -66,7 +67,8 @@ class Client():
 		self.save_obs = True
 
 		self.fitness = 0
-		self.internal_clock = 0.0
+		self.clock = 0.0
+		self.oscillator = 0.0
 
 		self.dispatcher = Dispatcher()
 		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
@@ -86,6 +88,9 @@ class Client():
 			self.clock = time.time()
 
 	def __dispatch_bye(self, addr, args, packets=None):
+		if self.save_obs:
+			save_im(np.reshape(im, (self.obs_size, self.obs_size)))
+			#self.__visualize_debug(im)
 		self.terminate = True
 
 	def __dispatch_info(self, addr, args, packets=None):
@@ -115,9 +120,6 @@ class Client():
 
 		data_uncomp = lz4.frame.decompress(data)
 		im = np.frombuffer(data_uncomp, dtype=np.int8)
-		if self.save_obs:
-			save_im(np.reshape(im, (self.obs_size, self.obs_size)))
-			#self.__visualize_debug(im)
 		im = np.reshape(im, (1, 1, self.obs_size, self.obs_size))	
 		im = im.astype(np.float32)
 		im = torch.from_numpy(im)
@@ -161,13 +163,12 @@ class Client():
 				if len(self.obs_queue) > 0 and len(self.joints_queue) > 0:
 					creature_id, obs = self.obs_queue.pop()
 					bodystate = self.joints_queue.pop()
+					action = self.__activate(rollout_gen, obs, bodystate, self.oscillator)
 
-					pulse_in = cpg(self.internal_clock)
-					action = self.__activate(rollout_gen, obs, bodystate, pulse_in)
-					pulse_out = action[-1]
+					self.clock += abs(action[-1]) * TIMESTEP_MAX
+					self.oscillator = cpg(self.clock)
 
-					self.internal_clock += np.interp(abs(pulse_out), [-1.0, 1.0], PULSE_MINMAX)
-					self.action_queue.append((creature_id, action[:-1], pulse_in))
+					self.action_queue.append((creature_id, action[:-1], self.oscillator))
 					self.obs_queue = []
 					
 					i += 1
