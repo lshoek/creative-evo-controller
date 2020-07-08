@@ -1,6 +1,9 @@
 # App specific
-/results
-/data/
+/data/obs/temp/
+/data/omniglot/
+/data/validate/
+
+/results/sim/
 /models/compressor/
 
 # Byte-compiled / optimized / DLL files

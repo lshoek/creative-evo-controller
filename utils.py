@@ -9,8 +9,8 @@ OBS_TEMP = 'data/obs/temp/'
 OBS_DATA = 'data/obs/data/'
 
 def save_im(im):
-    if (np.argmax(im) > 0):
-        path = f'{OBS_TEMP}{time.time()}.jpg'
+    if (np.max(im) > 0):
+        path = f'{OBS_TEMP}{time.time()}.png'
         img = Image.fromarray(im)
         img.convert('RGB').save(path)
 

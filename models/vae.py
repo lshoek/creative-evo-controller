@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
 
+def reparametrize(mu, logsigma):
+    sigma = logsigma.exp()
+    eps = torch.randn_like(sigma)
+    z = eps.mul(sigma).add_(mu)
+    return z
+
 class Decoder(nn.Module):
     def __init__(self, latent_size, m):
         super(Decoder, self).__init__()
@@ -58,9 +64,6 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logsigma = self.encoder(x)
-        sigma = logsigma.exp()
-        eps = torch.randn_like(sigma)
-        z = eps.mul(sigma).add_(mu)
-
+        z = reparametrize(mu, logsigma)
         recon_x = self.decoder(z)
         return recon_x, mu, logsigma
