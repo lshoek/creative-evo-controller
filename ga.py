@@ -66,7 +66,7 @@ class GA:
 
             idx = 0
             for s in pop_tmp:
-                 P[idx].rollout_gen.auto.load_state_dict ( s['vae'].copy() )
+                 P[idx].rollout_gen.vae.load_state_dict ( s['vae'].copy() )
                  P[idx].rollout_gen.controller.load_state_dict ( s['controller'].copy() )
 
                  i = s['generation'] + 1
@@ -119,7 +119,7 @@ class GA:
                     sys.stdout.flush()
                     
                     torch.save({
-                        'vae': elite.rollout_gen.auto.state_dict(), 
+                        'vae': elite.rollout_gen.vae.state_dict(), 
                         'controller': elite.rollout_gen.controller.state_dict(), 
                         'fitness':f
                     }, "{0}/best_{1}G{2}.p".format(folder, filename, i))
@@ -144,7 +144,7 @@ class GA:
                  ind_fitness_file.flush()
 
                  save_pop += [{
-                     'vae': s.rollout_gen.auto.state_dict(), 
+                     'vae': s.rollout_gen.vae.state_dict(), 
                      'controller': s.rollout_gen.controller.state_dict(), 
                      'fitness':fitness, 'generation':i
                 }]
