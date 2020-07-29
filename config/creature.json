@@ -1,5 +1,5 @@
 {
-    "vae.model.path": "models/compressor/conv_vae_28_06_2020.pth",
+    "vae.model.path": "models/compressor/conv_vae_omniglot_07_07_2020.pth",
     "vae.model.fromdisk": true,
     "vae.obs.size": 64,
     "vae.latent.size": 64,

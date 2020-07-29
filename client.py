@@ -88,9 +88,6 @@ class Client():
 			self.clock = time.time()
 
 	def __dispatch_bye(self, addr, args, packets=None):
-		if self.save_obs:
-			save_im(np.reshape(im, (self.obs_size, self.obs_size)))
-			#self.__visualize_debug(im)
 		self.terminate = True
 
 	def __dispatch_info(self, addr, args, packets=None):
@@ -105,6 +102,10 @@ class Client():
 
 	def __dispatch_fitness(self, addr, args, packets=None):
 		self.fitness = packets
+		if self.save_obs:
+			im = np.reshape(self.last_obs.detach().numpy(), (64, 64))*255.0
+			save_im(im)
+			#self.__visualize_debug(im)
 		self.finished = True
 
 	def __dispatch_start_packets(self, addr, args, packets=None):
@@ -119,11 +120,12 @@ class Client():
 		#print(f'[<-] received {len(data)} bytes')
 
 		data_uncomp = lz4.frame.decompress(data)
-		im = np.frombuffer(data_uncomp, dtype=np.int8)
+		im = np.frombuffer(data_uncomp, dtype=np.uint8)
 		im = np.reshape(im, (1, 1, self.obs_size, self.obs_size))	
-		im = im.astype(np.float32)
+		im = im.astype(np.float32)/255.0
 		im = torch.from_numpy(im)
 		self.obs_queue.append((creature_id, im))
+		self.last_obs = im
 
 	def __dispatch_joints_packets(self, addr, args, packets=None):
 		data = np.frombuffer(packets, dtype=np.float32)
