@@ -18,124 +18,65 @@ def init_weights(m):
         m.bias.data.fill_(0.01)
 
 class RolloutGenerator(object):
-    def __init__(self, config, compressor, device, time_limit):
-        latent_size = config.get('vae.latent.size')
-        obs_size = config.get('vae.obs.size')
-
-        self.num_joints = config.get('joints.size')
-        self.num_brushes = config.get('brushes.size')
-        self.cpg_enabled = config.get('cpg.enabled')
-
-        self.output_size = self.num_joints + self.num_brushes
-        self.input_size = self.num_joints + latent_size
-
-        self.client = Client(obs_size=obs_size)
-
-        self.device = device
-        self.time_limit = time_limit
-
-        # inputs (add an extra pulse neuron to the controller if cpg is enabled)
-        if self.cpg_enabled:
-            self.input_size = self.input_size + 1
-            self.output_size = self.output_size + 1
+    def __init__(self, ga):
+        # ga reference
+        self.ga = ga
 
         # compressor model
-        self.vae = compressor
+        self.vae = ga.compressor
 
-        # controller is trained on the go
-        self.controller = Controller(self.input_size, self.output_size).cuda()
+        # controller model; trained on the go
+        self.controller = Controller(ga.input_size, ga.output_size).cuda()
         self.controller.apply(init_weights).cuda()
 
-        # print(self.vae)
-        # print(self.controller)
-
-    def get_action(self, obs, bodystate, pulse):
-        bodystate_comp = torch.cat((bodystate, pulse)) if self.cpg_enabled else bodystate
+    def get_action(self, obs, bodystate, brushstate, pulse):
+        bodystate_comp = torch.cat((bodystate, brushstate, pulse)) if self.ga.cpg_enabled else torch.cat((bodystate, brushstate))
         latent_mu, _ = self.vae.cuda().encoder(obs.cuda())
         action = self.controller.cuda().forward(latent_mu.flatten(), bodystate_comp.cuda().flatten())
-        
+
         return action.squeeze().cpu().numpy()
 
-    def do_rollout(self, generation, id, eval_id, early_termination=True):
-        with torch.no_grad():    
-            fitness = self.client.start(generation, id, eval_id, rollout_gen=self)
-            return fitness, 0
-
-
-def fitness_eval_parallel(pool, r_gen, generation, id, eval_id, early_termination=True):
-    return pool.apply_async(r_gen.do_rollout, args=(generation, id, eval_id, early_termination) )
+    def do_rollout(self, generation, id, early_termination=True):
+        with torch.no_grad():  
+            client = Client(self.ga.obs_size)
+            return client.start(generation, id, rollout=self)
 
 
 class GAIndividual():
-    '''
-    GA Individual
+    def __init__(self, init_time, input_size, output_size, obs_size, compressor, cpg_enabled, device, time_limit):
+        self.init_time = init_time
+        self.input_size = input_size
+        self.output_size = output_size
+        self.obs_size = obs_size
+        self.compressor = compressor
 
-    multi = flag to switch multiprocessing on or off
-    '''
-    def __init__(self, config, compressor, device, time_limit, multi=False):
-        self.config = config
+        self.cpg_enabled = cpg_enabled
         self.device = device
         self.time_limit = time_limit
-        self.multi = multi
 
-        self.mutation_power = 0.01 
+        self.mutation_power = 0.01
+        self.elite = False 
+        self.id = 0
 
-        self.rollout_gen = RolloutGenerator(config, compressor, device, time_limit)
+        self.fitness = 0.0
 
-        self.async_results = []
+        self.rollout_gen = RolloutGenerator(self)
         self.calculated_results = {}
 
-    def run_solution(self, pool, generation, local_id, evals=1, early_termination=True, force_eval=False):
-
-        if force_eval:
-            self.calculated_results.pop(evals, None)
-
-        if (evals in self.calculated_results.keys()): #Already caculated results
-            return
-
-        self.async_results = []
-
-        for i in range(evals):
-            if self.multi:
-                self.async_results.append(fitness_eval_parallel(pool, generation, local_id, i, self.rollout_gen, early_termination))#, self.controller_parameters) )
-            else:
-                self.async_results.append(self.rollout_gen.do_rollout(generation, local_id, i, early_termination)) 
-
-
-    def evaluate_solution(self, evals):
-
-        if (evals in self.calculated_results.keys()): #Already calculated?
-            mean_fitness, std_fitness = self.calculated_results[evals]
-
-        else:
-            if self.multi:
-                results = [t.get()[0] for t in self.async_results]
-            else:
-                results = [t[0] for t in self.async_results]
-
-            mean_fitness = np.mean(results)
-            std_fitness = np.std(results)
-
-            self.calculated_results[evals] = (mean_fitness, std_fitness)
-
-        self.fitness = -mean_fitness
-
-        return mean_fitness, std_fitness
-
+    def run_solution(self, generation, local_id, early_termination=True):
+        self.id = local_id
+        self.fitness = self.rollout_gen.do_rollout(generation, local_id, early_termination)
+        return self.fitness
 
     def load_solution(self, filename):
-
         s = torch.load(filename)
-
         self.rollout_gen.vae.load_state_dict( s['vae'])
         self.rollout_gen.controller.load_state_dict( s['controller'])
 
-    
     def clone_individual(self):
-        child_solution = GAIndividual(self.config, self.rollout_gen.vae, self.device, self.time_limit, self.multi)
+        child_solution = GAIndividual(self.init_time, self.input_size, self.output_size, self.obs_size, self.rollout_gen.vae, self.cpg_enabled, self.device, self.time_limit)
         child_solution.fitness = self.fitness
-        child_solution.rollout_gen.controller = copy.deepcopy (self.rollout_gen.controller)
-        #child_solution.rollout_gen.vae = copy.deepcopy (self.rollout_gen.vae)
+        child_solution.rollout_gen.controller = copy.deepcopy(self.rollout_gen.controller)
         
         return child_solution
     
@@ -145,4 +86,10 @@ class GAIndividual():
 
     def mutate(self):
         self.mutate_params(self.rollout_gen.controller.state_dict())
-        #self.mutate_params(self.rollout_gen.vae.state_dict())
+
+    def set_controller_params(self, params):
+        new_params = torch.tensor(params, dtype=torch.float32).cuda()
+        params = self.rollout_gen.controller.state_dict()   
+        shape = params['fc.weight'].shape
+        params['fc.weight'].data.copy_(new_params.view(shape))
+        return

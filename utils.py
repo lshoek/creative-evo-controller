@@ -1,9 +1,12 @@
 import time
 import os
 import shutil
+import torch
 import subprocess as proc
 import numpy as np
+
 from PIL import Image
+from es import compute_ranks
 
 OBS_TEMP = 'data/obs/temp/'
 OBS_DATA = 'data/obs/data/'
@@ -36,3 +39,23 @@ def move_temp_to_data():
         if os.path.isfile(fname):
             shutil.copy(fname, OBS_DATA)
             os.remove(fname)
+
+""" Save a checkpoint of the models """
+def save_checkpoint(model, filename, state, current_time):
+
+    dir_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), '..', 'saved_models', current_time)
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+
+    filename = os.path.join(dir_path, "{}-{}.pth.tar".format(state['version'], filename))
+    state['model'] = model.state_dict()
+    torch.save(state, filename)
+
+"""
+https://github.com/openai/evolution-strategies-starter/blob/master/es_distributed/es.py
+"""
+def rankmin(x):
+    y = compute_ranks(x.ravel()).reshape(x.shape).astype(np.float32)
+    y /= (x.size - 1)
+    y -= .5
+    return y

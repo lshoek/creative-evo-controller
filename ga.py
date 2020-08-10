@@ -4,31 +4,45 @@ import pickle
 import torch
 import time
 import math
-from os.path import join, exists
 import multiprocessing
 import gc
 import copy
 import json
+import os
+from datetime import datetime
+from es import CMAES
+from utils import rankmin
 
 class GA:
-    def __init__(self, elite_evals, top, threads, timelimit, pop_size, device):
-        self.top  = top  # Number of top individuals that should be reevaluated
-        self.elite_evals = elite_evals  # Number of times  the top individuals should be evaluated
-
+    def __init__(self, timelimit, pop_size, device):
         self.pop_size = pop_size
-
-        self.threads = threads
-        multi_process = threads>1
-
         self.truncation_threshold = int(pop_size/2)  # Should be dividable by two
         self.P = []
 
+        # unique GA id
+        self.init_time =  datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # load configuration params
         with open('config/creature.json') as f:
             config = json.load(f)
             model_fromdisk = config.get('vae.model.fromdisk')
             model_path = config.get('vae.model.path')
-            latent_size = config.get('vae.latent.size')
 
+            latent_size = config.get('vae.latent.size')
+            obs_size = config.get('vae.obs.size')
+            num_effectors = config.get('joints.size') + config.get('brushes.size')
+            input_size = latent_size + num_effectors
+            output_size = num_effectors
+
+            cpg_enabled = config.get('cpg.enabled')
+            if cpg_enabled:
+                input_size += 1
+                output_size += 1
+
+        num_controller_params = input_size * output_size # assuming a single layer
+        print(f'Number of controller parameters: {num_controller_params}')
+
+        # load vision module
         from models.vae import VAE
         vae = VAE(latent_size).cuda()
 
@@ -37,30 +51,31 @@ class GA:
             vae.eval() # inference mode
             print(f'Loaded VAE model {model_path} from disk')
 
-        print(f'Generating initial population of {pop_size} condidates...')
+        print(f'Generating initial population of {pop_size} candidates...')
 
+        # initialize population
         from train import GAIndividual
         for _ in range(pop_size):
-            self.P.append(GAIndividual(config, compressor=vae, device=device, time_limit=timelimit, multi=multi_process))
-
+            self.P.append(GAIndividual(
+                self.init_time, input_size, output_size, obs_size, 
+                compressor=vae, cpg_enabled=cpg_enabled, device=device, time_limit=timelimit))
         
+        # initialize cma es
+        sigma_init = 4.0
+        self.solver = CMAES(num_params=num_controller_params, sigma_init=sigma_init, popsize=pop_size)
+
     def run(self, max_generations, filename, folder):
-
-        O = []
-        
-        max_fitness = -sys.maxsize
+        best_f = -sys.maxsize
 
         fitness_file = open(folder+"/fitness_"+filename+".txt", 'a')
-
         ind_fitness_file = open(folder+"/individual_fitness_"+filename+".txt", 'a')
         
-        i = 0
+        g = 0
         P = self.P
-
         pop_name = folder+"/pop_"+filename+".p"
 
-        #Load previously saved population
-        if exists( pop_name ):
+        # Load previously saved population
+        if os.path.exists(pop_name):
             pop_tmp = torch.load(pop_name)
             print("Loading existing population ",pop_name, len(pop_tmp))
 
@@ -69,165 +84,73 @@ class GA:
                  P[idx].rollout_gen.vae.load_state_dict ( s['vae'].copy() )
                  P[idx].rollout_gen.controller.load_state_dict ( s['controller'].copy() )
 
-                 i = s['generation'] + 1
+                 g = s['generation'] + 1
                  idx+=1
-                 
 
-        while (True): 
-            pool = multiprocessing.Pool(self.threads)
+        while g < max_generations: 
             start_time = time.time()
+            fitness = np.zeros(self.pop_size)
 
-            print(f'Generation {i}')
-            sys.stdout.flush()
-
+            print(f'Generation {g}')
             print(f'Evaluating individuals: {len(P)}')
-            local_id = 0
-            for s in P:  
-                s.run_solution(pool, generation=i, local_id=local_id, evals=1, force_eval=True)
-                local_id = local_id + 1
 
-            fitness = []
+            # ask the ES to give us a set of candidate solutions
+            solutions = self.solver.ask()
 
-            for s in P:
-                s.is_elite = False
-                f, _ = s.evaluate_solution(1)
-                fitness += [f]
+            # evaluate all candidates
+            for i, s in enumerate(P):  
+                s.set_controller_params(solutions[i])
+                f = s.run_solution(generation=g, local_id=i)
+                fitness[i] = f
 
-            self.sort_objective(P)
+            current_f = np.max(fitness)
+            average_f = np.mean(fitness)
+            print(f'Current best: {current_f}\nCurrent average: {average_f}\n All-time best: {best_f}')
 
-            max_fitness_gen = -sys.maxsize #keep track of highest fitness this generation
+            # return rewards to ES for param update
+            max_index = np.argmax(fitness)
+            fitness = rankmin(fitness)
+            self.solver.tell(fitness)
+            new_results = self.solver.result()
 
-            print("Evaluating elites: ", self.top)
+            # process results
+            if current_f > best_f:
+                best_controller = solutions[max_index] # SAVE THIS AND THE SOLVER
 
-            for k in range(self.top):
-                P[k].run_solution(pool, generation=i, local_id=local_id, evals=self.elite_evals)
-                local_id = local_id + 1
-            
-            for k in range(self.top):
-
-                f, _ = P[k].evaluate_solution(self.elite_evals) 
-
-                if f>max_fitness_gen:
-                    max_fitness_gen = f
-                    elite = P[k]
-
-                if f > max_fitness: #best fitness ever found
-                    max_fitness = f
-                    print("\tFound new champion ", max_fitness )
-
-                    best_ever = P[k]
-                    sys.stdout.flush()
-                    
-                    torch.save({
-                        'vae': elite.rollout_gen.vae.state_dict(), 
-                        'controller': elite.rollout_gen.controller.state_dict(), 
-                        'fitness':f
-                    }, "{0}/best_{1}G{2}.p".format(folder, filename, i))
-
-            elite.is_elite = True  #The best 
-
-            sys.stdout.flush()
-
-            pool.close()
-
-            O = []
-
-            if len(P) > self.truncation_threshold-1:
-                del P[self.truncation_threshold-1:]
-
-            P.append(elite) #Maybe it's in there twice now but that's okay
+                # Save solver and change level to a random one
+                _dir = os.path.join('saved_models', self.init_time)
+                if not os.path.exists(_dir):
+                    os.makedirs(_dir)
+                
+                solver_path = os.path.join(_dir, "solver.pkl")
+                pickle.dump(self.solver, open(solver_path, 'wb'))
+                best_f = current_f
 
             save_pop = []
-
             for s in P:
-                 ind_fitness_file.write( "Gen\t%d\tFitness\t%f\n" % (i, -s.fitness )  )  
-                 ind_fitness_file.flush()
+                ind_fitness_file.write("Gen\t%d\tFitness\t%f\n" % (i, -s.fitness ))  
+                ind_fitness_file.flush()
 
-                 save_pop += [{
-                     'vae': s.rollout_gen.vae.state_dict(), 
+                save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
                      'fitness':fitness, 'generation':i
                 }]
-                 
-
-            if (i % 25 == 0):
-                print("saving population")
-                torch.save(save_pop, folder+"/pop_"+filename+".p")
-                print("done")
-
-            print("Creating new population ...", len(P))
-            O = self.make_new_pop(P)
-
-            P.extend(O)
+            print("Saving population")
+            torch.save(save_pop, folder+"/pop_"+filename+".p")
 
             elapsed_time = time.time() - start_time
 
-            print( "%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" % (i, np.mean(fitness), max_fitness_gen, max_fitness, elapsed_time) )  # python will convert \n to os.linesep
-
-            fitness_file.write( "%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" % (i, np.mean(fitness), max_fitness_gen, max_fitness,  elapsed_time) )  # python will convert \n to os.linesep
+            print("%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" %                (i, average_f, current_f, best_f, elapsed_time))
+            fitness_file.write("%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" %   (i, average_f, current_f, best_f, elapsed_time))
             fitness_file.flush()
 
             if (i > max_generations):
                 break
 
             gc.collect()
-
-            i += 1
-
-        print("Testing best ever: ")
-        pool = multiprocessing.Pool(self.threads)
-
-        best_ever.run_solution(pool, 100, early_termination=False, force_eval = True)
-        avg_f, sd = best_ever.evaluate_solution(100)
-        print(avg_f, sd)
-        
-        fitness_file.write( "Test\t%f\t%f\n" % (avg_f, sd) ) 
+            g += 1
 
         fitness_file.close()
-
         ind_fitness_file.close()
-
-                                
-    def sort_objective(self, P):
-        for i in range(len(P) - 1, -1, -1):
-            for j in range(1, i + 1):
-                s1 = P[j - 1]
-                s2 = P[j]
-                
-                if s1.fitness > s2.fitness:
-                    P[j - 1] = s2
-                    P[j] = s1
-                    
-
-    def make_new_pop(self, P):
-        '''
-        Make new population O, offspring of P. 
-        '''
-        O = []
-        
-        while len(O) < self.truncation_threshold:
-            selected_solution = None
-            
-            s1 = random.choice(P)
-            s2 = s1
-            while s1 == s2:
-                s2 = random.choice(P)
-
-            if s1.fitness < s2.fitness: #Lower is better
-                selected_solution = s1
-            else:
-                selected_solution  = s2
-
-            if s1.is_elite:  #If they are the elite they definitely win
-                selected_solution = s1
-            elif s2.is_elite:  
-                selected_solution = s2
-
-            child_solution = selected_solution.clone_individual() 
-            child_solution.mutate()
-
-            if (not child_solution in O):    
-                O.append(child_solution)
-        
-        return O
-        
+        print('Finished')
+   

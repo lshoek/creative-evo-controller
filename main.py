@@ -29,20 +29,11 @@ def parse_args():
     parser.add_argument('--generations', type=int, default=1000, metavar='N',
         help='number of generations to train (default: 1000)')
 
-    parser.add_argument('--threads', type=int, default=4, metavar='N',
-        help='threads')
-
     parser.add_argument('--test', type=str, default='', metavar='N',
         help='0 = no protection, 1 = protection')
 
     parser.add_argument('--folder', type=str, default='results/sim', metavar='N',
-        help='folder to store results')
-
-    parser.add_argument('--top', type=int, default=3, metavar='N',
-        help='numer of top elites that should be re-evaluated')
-    
-    parser.add_argument('--elite_evals', type=int, default=20, metavar='N',
-        help='how many times should the elite be evaluated')                        
+        help='folder to store results')                    
 
     parser.add_argument('--timelimit', type=int, default=1000, metavar='N',
         help='time limit per evaluation')
@@ -64,7 +55,7 @@ def main(argv):
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(device)
 
-    ga = GA(args.elite_evals, args.top, args.threads, args.timelimit, args.pop_size, device)
+    ga = GA(args.timelimit, args.pop_size, device)
     ga.run(args.generations, f'{time.time()}', args.folder)
 
 if __name__ == '__main__':
