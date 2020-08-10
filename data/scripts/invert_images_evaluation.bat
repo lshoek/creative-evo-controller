@@ -1,0 +1,1 @@
+for /r "images_evaluation/" %%i in (*.png) do ffmpeg -y -i %%i -vf negate %%~pi%%~ni.png

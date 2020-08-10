@@ -1,10 +1,9 @@
 # App specific
-data/obs/temp/
-data/omniglot/
-data/validate/
+data/obs/temp/*
+data/omniglot/*
 
-results/sim/
-models/compressor/
+results/sim/*
+models/compressor/*
 saved_models/*
 results/*
 
