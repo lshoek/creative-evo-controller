@@ -9,7 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args" : ["--timelimit", "120", "--pop_size", "32", "--threads", "1"],
+            "args" : ["--timelimit", "120", "--pop_size", "8"],
             "console": "integratedTerminal"
         }
     ]

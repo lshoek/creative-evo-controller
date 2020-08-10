@@ -69,6 +69,7 @@ class Client():
 		self.fitness = 0
 		self.clock = 0.0
 		self.oscillator = 0.0
+		self.brush = 0.5
 
 		self.dispatcher = Dispatcher()
 		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
@@ -98,7 +99,7 @@ class Client():
 		if canvas_height != self.obs_size:
 			print(f'Error: VAE input size ({canvas_height}) and canvas size ({self.obs_size}) mismatch!')
 
-		self.client.send_message(f'{OSC_INFO}/{self.id}/{self.eval_id}/{self.generation}/{self.time_limit}', 0)
+		self.client.send_message(f'{OSC_INFO}/{self.ga_id}/{self.id}/{self.generation}/{self.time_limit}', 0)
 
 	def __dispatch_fitness(self, addr, args, packets=None):
 		self.fitness = packets
@@ -145,12 +146,13 @@ class Client():
 		plt.show()
 		print(im)
 
-	def __activate(self, rollout_gen, obs, bodystate, pulse):		
+	def __activate(self, rollout, obs, bodystate, brush, pulse):		
 		pulse_tensor = torch.tensor([pulse])
-		action = rollout_gen.get_action(obs, bodystate, pulse_tensor)
+		brush_tensor = torch.tensor([brush])
+		action = rollout.get_action(obs, bodystate, brush_tensor, pulse_tensor)
 		return action
 
-	async def __loop(self, rollout_gen):
+	async def __loop(self, rollout):
 		i = 0
 		while not self.terminate:
 			if not self.handshake:
@@ -165,10 +167,11 @@ class Client():
 				if len(self.obs_queue) > 0 and len(self.joints_queue) > 0:
 					creature_id, obs = self.obs_queue.pop()
 					bodystate = self.joints_queue.pop()
-					action = self.__activate(rollout_gen, obs, bodystate, self.oscillator)
+					action = self.__activate(rollout, obs, bodystate, self.brush, self.oscillator)
 
 					self.clock += abs(action[-1]) * TIMESTEP_MAX
 					self.oscillator = cpg(self.clock)
+					self.brush = action[-2]
 
 					self.action_queue.append((creature_id, action[:-1], self.oscillator))
 					self.obs_queue = []
@@ -181,22 +184,22 @@ class Client():
 
 			await asyncio.sleep(0.0)
 
-	async def __start(self, rollout_gen):
+	async def __start(self, rollout):
 		server = AsyncIOOSCUDPServer((self.host, self.inport), self.dispatcher, asyncio.get_event_loop())
 		transport, protocol = await server.create_serve_endpoint()
 
-		await self.__loop(rollout_gen)
+		await self.__loop(rollout)
 		transport.close()
 
-	def start(self, generation, id, eval_id, rollout_gen):
-		self.time_limit = rollout_gen.time_limit
-		self.prev_action = np.random.rand(rollout_gen.output_size).astype(np.float32)
+	def start(self, generation, id, rollout):
+		self.ga_id = rollout.ga.init_time
+		self.time_limit = rollout.ga.time_limit
+		self.prev_action = np.random.rand(rollout.ga.output_size).astype(np.float32)
 		self.generation = generation
 		self.id = id
-		self.eval_id = eval_id
 
 		print(f'Started {generation}:{id}')
-		asyncio.run(self.__start(rollout_gen))
+		asyncio.run(self.__start(rollout))
 
 		print(f'Finished {generation}:{id} / fitness: {self.fitness}')
 		return self.fitness
