@@ -1,0 +1,1 @@
+for /r "artifacts/" %%i in (*.jpg) do ffmpeg -y -i %%i -vf negate %%~pi%%~ni.png

@@ -13,6 +13,13 @@ from datetime import datetime
 from es import CMAES
 from utils import rankmin
 
+def set_controller_weights(controller, weights):
+    new_params = torch.tensor(weights, dtype=torch.float32).cuda()
+    params = controller.state_dict()
+    shape = params['fc.weight'].shape
+    controller.state_dict()['fc.weight'].data.copy_(new_params.view(shape))
+    return
+
 class GA:
     def __init__(self, timelimit, pop_size, device):
         self.pop_size = pop_size
@@ -64,26 +71,44 @@ class GA:
         sigma_init = 4.0
         self.solver = CMAES(num_params=num_controller_params, sigma_init=sigma_init, popsize=pop_size)
 
-    def run(self, max_generations, filename, folder):
-        best_f = -sys.maxsize
-
-        fitness_file = open(folder+"/fitness_"+filename+".txt", 'a')
-        ind_fitness_file = open(folder+"/individual_fitness_"+filename+".txt", 'a')
+    def run(self, max_generations, folder, ga_id=''):
+        if (ga_id == ''):
+            ga_id = self.init_time
         
+        # disk
+        results_dir = os.path.join(folder, ga_id)
+        if not os.path.exists(results_dir):
+            os.makedirs(results_dir)
+            
+        fitness_path = os.path.join(results_dir, 'fitness.txt')
+        ind_fitness_path = os.path.join(results_dir, 'ind_fitness.txt')
+        solver_path = os.path.join(results_dir, "solver.pkl")
+
+        with open(fitness_path, 'a') as file:
+            file.write('gen/avg/cur/best\n')
+            file.flush()
+
         g = 0
         P = self.P
-        pop_name = folder+"/pop_"+filename+".p"
+        pop_name = os.path.join(results_dir, 'population.p')
+        best_f = -sys.maxsize
+
+        # initialize controller instance to be saved
+        from models.controller import Controller
+        best_controller = Controller(P[0].input_size, P[0].output_size)
+
+        # instantiate a separate client to request fitness from simulator
+        from client import Client, ClientType
+        self.request_client = Client(ClientType.REQUEST)
 
         # Load previously saved population
         if os.path.exists(pop_name):
             pop_tmp = torch.load(pop_name)
-            print("Loading existing population ",pop_name, len(pop_tmp))
+            print("Loading existing population ", pop_name, len(pop_tmp))
 
             idx = 0
             for s in pop_tmp:
-                 P[idx].rollout_gen.vae.load_state_dict ( s['vae'].copy() )
-                 P[idx].rollout_gen.controller.load_state_dict ( s['controller'].copy() )
-
+                 P[idx].rollout_gen.controller.load_state_dict(s['controller'].copy())
                  g = s['generation'] + 1
                  idx+=1
 
@@ -99,9 +124,11 @@ class GA:
 
             # evaluate all candidates
             for i, s in enumerate(P):  
-                s.set_controller_params(solutions[i])
-                f = s.run_solution(generation=g, local_id=i)
-                fitness[i] = f
+                s.set_controller_weights(solutions[i])
+                s.run_solution(generation=g, local_id=i)
+            
+            # request fitness from simulator
+            fitness = np.array(self.request_client.start())
 
             current_f = np.max(fitness)
             average_f = np.mean(fitness)
@@ -112,37 +139,38 @@ class GA:
             fitness = rankmin(fitness)
             self.solver.tell(fitness)
             new_results = self.solver.result()
+            current_best = new_results[1]
 
             # process results
             if current_f > best_f:
-                best_controller = solutions[max_index] # SAVE THIS AND THE SOLVER
+                set_controller_weights(best_controller, solutions[max_index])
+                torch.save(best_controller, os.path.join(results_dir, 'best_controller.pth'))
 
                 # Save solver and change level to a random one
-                _dir = os.path.join('saved_models', self.init_time)
-                if not os.path.exists(_dir):
-                    os.makedirs(_dir)
-                
-                solver_path = os.path.join(_dir, "solver.pkl")
                 pickle.dump(self.solver, open(solver_path, 'wb'))
                 best_f = current_f
 
+            print("Saving population")
             save_pop = []
-            for s in P:
-                ind_fitness_file.write("Gen\t%d\tFitness\t%f\n" % (i, -s.fitness ))  
-                ind_fitness_file.flush()
+            for i, s in enumerate(P):
+                with open(ind_fitness_path, 'a') as file:
+                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\n' % (g, i, s.fitness))  
+                    file.flush()
 
                 save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
-                     'fitness':fitness, 'generation':i
+                     'fitness':fitness, 
+                     'generation':i
                 }]
-            print("Saving population")
-            torch.save(save_pop, folder+"/pop_"+filename+".p")
+            torch.save(save_pop, os.path.join(results_dir, 'population.p'))
 
             elapsed_time = time.time() - start_time
 
-            print("%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" %                (i, average_f, current_f, best_f, elapsed_time))
-            fitness_file.write("%d\tAverage\t%f\tMax\t%f\tMax ever\t%f\tTime\t%f\n" %   (i, average_f, current_f, best_f, elapsed_time))
-            fitness_file.flush()
+            res = f'%d/%f/%f/%f' % (g, average_f, current_f, best_f)
+            print('gen/avg/cur/best', res)
+            with open(fitness_path, 'a') as file:
+                file.write(f'{res}\n')
+                file.flush()
 
             if (i > max_generations):
                 break
@@ -150,7 +178,5 @@ class GA:
             gc.collect()
             g += 1
 
-        fitness_file.close()
-        ind_fitness_file.close()
         print('Finished')
    

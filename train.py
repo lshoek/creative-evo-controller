@@ -10,7 +10,7 @@ from multiprocessing import Lock
 
 from models.vae import VAE
 from models.controller import Controller
-from client import Client
+from client import Client, ClientType
 
 def init_weights(m):
     if type(m) == torch.nn.Linear:
@@ -38,8 +38,8 @@ class RolloutGenerator(object):
 
     def do_rollout(self, generation, id, early_termination=True):
         with torch.no_grad():  
-            client = Client(self.ga.obs_size)
-            return client.start(generation, id, rollout=self)
+            client = Client(ClientType.ROLLOUT, self.ga.obs_size)
+            client.start(generation, id, rollout=self)
 
 
 class GAIndividual():
@@ -65,8 +65,7 @@ class GAIndividual():
 
     def run_solution(self, generation, local_id, early_termination=True):
         self.id = local_id
-        self.fitness = self.rollout_gen.do_rollout(generation, local_id, early_termination)
-        return self.fitness
+        self.rollout_gen.do_rollout(generation, local_id, early_termination)
 
     def load_solution(self, filename):
         s = torch.load(filename)
@@ -87,8 +86,8 @@ class GAIndividual():
     def mutate(self):
         self.mutate_params(self.rollout_gen.controller.state_dict())
 
-    def set_controller_params(self, params):
-        new_params = torch.tensor(params, dtype=torch.float32).cuda()
+    def set_controller_weights(self, weights):
+        new_params = torch.tensor(weights, dtype=torch.float32).cuda()
         params = self.rollout_gen.controller.state_dict()   
         shape = params['fc.weight'].shape
         params['fc.weight'].data.copy_(new_params.view(shape))

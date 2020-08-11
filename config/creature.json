@@ -1,9 +1,9 @@
 {
-    "vae.model.path": "models/compressor/conv_vae_omniglot_epoch10.pth",
+    "vae.model.path": "saved_models/vae/conv_vae_omniglot_epoch450.pth",
     "vae.model.fromdisk": true,
     "vae.obs.size": 64,
     "vae.latent.size": 64,
-    "joints.size": 7,
+    "joints.size": 5,
     "brushes.size": 1,
     "vision.local": false,
     "cpg.enabled": true

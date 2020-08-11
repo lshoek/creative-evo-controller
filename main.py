@@ -32,11 +32,14 @@ def parse_args():
     parser.add_argument('--test', type=str, default='', metavar='N',
         help='0 = no protection, 1 = protection')
 
-    parser.add_argument('--folder', type=str, default='results/sim', metavar='N',
+    parser.add_argument('--folder', type=str, default='results', metavar='N',
         help='folder to store results')                    
 
     parser.add_argument('--timelimit', type=int, default=1000, metavar='N',
         help='time limit per evaluation')
+
+    parser.add_argument('--ga_id', type=str, default='', metavar='N',
+        help='resume training')
 
     return parser.parse_args()
 
@@ -56,7 +59,7 @@ def main(argv):
     print(device)
 
     ga = GA(args.timelimit, args.pop_size, device)
-    ga.run(args.generations, f'{time.time()}', args.folder)
+    ga.run(args.generations, args.folder, args.ga_id)
 
 if __name__ == '__main__':
     main(sys.argv)

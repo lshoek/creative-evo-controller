@@ -20,6 +20,7 @@ OSC_HELLO = "/hi"
 OSC_BYE = "/bye"
 OSC_INFO = "/info"
 OSC_ACTIVATION = "/act"
+OSC_END_ROLLOUT = "/end"
 OSC_FITNESS = "/fit"
 OSC_JOINTS = "/jnts"
 OSC_PULSE = "/pls"
@@ -33,6 +34,11 @@ TIMESTEP_EPSILON = 1e-3
 TIMESTEP_BOUND = math.pi
 TIMESTEP_MAX = TIMESTEP_BOUND-TIMESTEP_EPSILON
 
+from enum import Enum
+class ClientType(Enum):
+	ROLLOUT = 0
+	REQUEST = 1
+
 def norm01(x):
 	return (x+1.0)*0.5
 
@@ -40,7 +46,8 @@ def cpg(t):
 	return norm01(math.sin(np.float(t)))
 
 class Client():
-	def __init__(self, host=None, inport=None, outport=None, obs_size=64):
+	def __init__(self, client_type, host=None, inport=None, outport=None, obs_size=64):
+		self.type = client_type
 		self.action_queue = []
 		self.joints_queue = []
 		self.obs_queue = []
@@ -66,32 +73,37 @@ class Client():
 		self.terminate = False
 		self.save_obs = True
 
-		self.fitness = 0
+		self.fitness = 0.0
 		self.clock = 0.0
 		self.oscillator = 0.0
 		self.brush = 0.5
 
 		self.dispatcher = Dispatcher()
-		self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello, self)
-		self.dispatcher.map(f'{OSC_BYE}*', self.__dispatch_bye, self)
-		self.dispatcher.map(f'{OSC_INFO}*', self.__dispatch_info, self)
-		self.dispatcher.map(f'{OSC_FITNESS}*', self.__dispatch_fitness, self)
-		self.dispatcher.map(f'{OSC_JOINTS}*', self.__dispatch_joints_packets, self)
-		self.dispatcher.map(f'{OSC_ARTIFACT_START}*', self.__dispatch_start_packets, self)
-		self.dispatcher.map(f'{OSC_ARTIFACT_PART}*', self.__dispatch_append_packets, self)
-		self.dispatcher.map(f'{OSC_ARTIFACT_END}*', self.__dispatch_process_packets, self)
+
+		if client_type == ClientType.ROLLOUT:
+			self.dispatcher.map(f'{OSC_HELLO}*', self.__dispatch_hello)
+			self.dispatcher.map(f'{OSC_BYE}*', self.__dispatch_bye)
+			self.dispatcher.map(f'{OSC_INFO}*', self.__dispatch_info)
+			self.dispatcher.map(f'{OSC_END_ROLLOUT}*', self.__dispatch_end)
+
+			self.dispatcher.map(f'{OSC_JOINTS}*', self.__dispatch_joints_packets)
+			self.dispatcher.map(f'{OSC_ARTIFACT_START}*', self.__dispatch_start_packets)
+			self.dispatcher.map(f'{OSC_ARTIFACT_PART}*', self.__dispatch_append_packets)
+			self.dispatcher.map(f'{OSC_ARTIFACT_END}*', self.__dispatch_process_packets)
+		else:
+			self.dispatcher.map(f'{OSC_FITNESS}*', self.__dispatch_fitness)
 
 
-	def __dispatch_hello(self, addr, args, packets=None):
+	def __dispatch_hello(self, addr, packets=None):
 		if self.handshake:
 			self.client.send_message(OSC_HELLO, 0)
 			self.handshake = False
 			self.clock = time.time()
 
-	def __dispatch_bye(self, addr, args, packets=None):
+	def __dispatch_bye(self, addr, packets=None):
 		self.terminate = True
 
-	def __dispatch_info(self, addr, args, packets=None):
+	def __dispatch_info(self, addr, packets=None):
 		info = addr.split('/')
 		name, num_joints, num_outputs, canvas_height = info[2], int(info[3]), int(info[4]), int(info[5])
 
@@ -101,21 +113,25 @@ class Client():
 
 		self.client.send_message(f'{OSC_INFO}/{self.ga_id}/{self.id}/{self.generation}/{self.time_limit}', 0)
 
-	def __dispatch_fitness(self, addr, args, packets=None):
-		self.fitness = packets
+	def __dispatch_end(self, addr, packets=None):
 		if self.save_obs:
 			im = np.reshape(self.last_obs.detach().numpy(), (64, 64))*255.0
 			save_im(im)
 			#self.__visualize_debug(im)
 		self.finished = True
+	
+	from typing import List, Any
+	def __dispatch_fitness(self, addr:str, *args: List[Any]):
+		self.fitness = args
+		self.finished = True
 
-	def __dispatch_start_packets(self, addr, args, packets=None):
+	def __dispatch_start_packets(self, addr, packets=None):
 		self.obs_parts = []
 
-	def __dispatch_append_packets(self, addr, args, packets=None):
+	def __dispatch_append_packets(self, addr, packets=None):
 		self.obs_parts.append(packets)
 
-	def __dispatch_process_packets(self, addr, args, packets=None):
+	def __dispatch_process_packets(self, addr, packets=None):
 		creature_id = packets
 		data = b''.join(self.obs_parts)
 		#print(f'[<-] received {len(data)} bytes')
@@ -128,7 +144,7 @@ class Client():
 		self.obs_queue.append((creature_id, im))
 		self.last_obs = im
 
-	def __dispatch_joints_packets(self, addr, args, packets=None):
+	def __dispatch_joints_packets(self, addr, packets=None):
 		data = np.frombuffer(packets, dtype=np.float32)
 		state = torch.from_numpy(data)
 		self.joints_queue.append(state)
@@ -184,22 +200,38 @@ class Client():
 
 			await asyncio.sleep(0.0)
 
-	async def __start(self, rollout):
+	async def __request(self):
+		self.client.send_message(f'{OSC_FITNESS}', 0)
+		while not self.terminate:
+			#if not self.handshake:
+			if self.finished:
+				return
+
+			await asyncio.sleep(0.0)
+
+	async def __start(self, rollout=None):
 		server = AsyncIOOSCUDPServer((self.host, self.inport), self.dispatcher, asyncio.get_event_loop())
 		transport, protocol = await server.create_serve_endpoint()
 
-		await self.__loop(rollout)
+		if self.type == ClientType.ROLLOUT:
+			await self.__loop(rollout)
+		else:
+			await self.__request()
+
 		transport.close()
 
-	def start(self, generation, id, rollout):
-		self.ga_id = rollout.ga.init_time
-		self.time_limit = rollout.ga.time_limit
-		self.prev_action = np.random.rand(rollout.ga.output_size).astype(np.float32)
-		self.generation = generation
-		self.id = id
-
-		print(f'Started {generation}:{id}')
+	def start(self, generation=0, id=0, rollout=None):
+		if (self.type == ClientType.ROLLOUT):
+			self.ga_id = rollout.ga.init_time
+			self.time_limit = rollout.ga.time_limit
+			self.prev_action = np.random.rand(rollout.ga.output_size).astype(np.float32)
+			self.generation = generation
+			self.id = id
+			print(f'Started {generation}:{id}')
+		
 		asyncio.run(self.__start(rollout))
 
-		print(f'Finished {generation}:{id} / fitness: {self.fitness}')
+		if (rollout): 
+			print(f'Finished {generation}:{id}')
+
 		return self.fitness
