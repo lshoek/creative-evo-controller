@@ -1,5 +1,5 @@
 {
-    "vae.model.path": "saved_models/vae/conv_vae_omniglot_epoch450.pth",
+    "vae.model.path": "saved_models/vae/conv_vae_omniglot_final.pth",
     "vae.model.fromdisk": true,
     "vae.obs.size": 64,
     "vae.latent.size": 64,

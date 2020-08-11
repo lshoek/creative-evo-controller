@@ -1,10 +1,8 @@
 # App specific
 data/obs/temp/*
 data/omniglot/*
-
-results/sim/*
-models/compressor/*
-saved_models/*
+data/validate/out/*
+saved_models/vae/intermediate/*
 results/*
 
 # Byte-compiled / optimized / DLL files
