@@ -73,7 +73,7 @@ class Client():
 		self.terminate = False
 		self.save_obs = True
 
-		self.fitness = 0.0
+		self.fitness = []
 		self.clock = 0.0
 		self.oscillator = 0.0
 		self.brush = 0.5

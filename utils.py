@@ -54,7 +54,7 @@ def save_checkpoint(model, filename, state, current_time):
 """
 https://github.com/openai/evolution-strategies-starter/blob/master/es_distributed/es.py
 """
-def rankmin(x):
+def compute_centered_ranks(x):
     y = compute_ranks(x.ravel()).reshape(x.shape).astype(np.float32)
     y /= (x.size - 1)
     y -= .5
