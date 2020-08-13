@@ -158,10 +158,10 @@ class GA:
                 
                 # /fitness /coverage /coverageReward /IC /PCt0 /PCt1
                 res = results_full[i,:]
-                res_str = (', '.join(['%f']*len(res))) % tuple(res)
+                res_str = (', '.join(['%.6f']*len(res))) % tuple(res)
 
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\tResults%s\n' % (g, i, s.fitness, res_str))  
+                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\tResults\t%s\n' % (g, i, s.fitness, res_str))  
 
                 save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
@@ -170,10 +170,10 @@ class GA:
                 }]
             torch.save(save_pop, os.path.join(results_dir, 'population.p'))
 
-            result_text = '%d/%f/%f/%f' % (g, average_f, current_f, best_f)
-            print(f'gen/avg/cur/best : {result_text}')
+            res_str = '%d/%f/%f/%f' % (g, average_f, current_f, best_f)
+            print(f'gen/avg/cur/best : {res_str}')
             with open(fitness_path, 'a') as file:
-                file.write(f'{res}\n')
+                file.write(f'{res_str}\n')
 
             if (i > max_generations):
                 break
