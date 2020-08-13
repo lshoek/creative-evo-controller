@@ -11,7 +11,8 @@ import json
 import os
 from datetime import datetime
 from es import CMAES
-from utils import rankmin
+from client import Client
+from utils import compute_centered_ranks
 
 def set_controller_weights(controller, weights):
     new_params = torch.tensor(weights, dtype=torch.float32).cuda()
@@ -103,16 +104,15 @@ class GA:
         # Load previously saved population
         if os.path.exists(pop_name):
             pop_tmp = torch.load(pop_name)
-            print("Loading existing population ", pop_name, len(pop_tmp))
+            print(f"Loading existing population {pop_name}, {len(pop_tmp)} individuals")
 
             idx = 0
             for s in pop_tmp:
-                 P[idx].rollout_gen.controller.load_state_dict(s['controller'].copy())
-                 g = s['generation'] + 1
-                 idx+=1
+                P[idx].rollout_gen.controller.load_state_dict(s['controller'].copy())
+                g = s['generation'] + 1
+                idx+=1
 
         while g < max_generations: 
-            start_time = time.time()
 
             fitness = np.zeros(self.pop_size)
             results_full = np.zeros(self.pop_size)
@@ -137,9 +137,10 @@ class GA:
             print(f'Current best: {current_f}\nCurrent average: {average_f}\n All-time best: {best_f}')
 
             # return rewards to ES for param update
+            centered_ranks = compute_centered_ranks(fitness)
+            self.solver.tell(centered_ranks)
+
             max_index = np.argmax(fitness)
-            fitness = rankmin(fitness)
-            self.solver.tell(fitness)
             new_results = self.solver.result()
             current_best = new_results[1]
 
@@ -166,14 +167,12 @@ class GA:
                 save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
                      'fitness':fitness, 
-                     'generation':i
+                     'generation':g
                 }]
             torch.save(save_pop, os.path.join(results_dir, 'population.p'))
 
-            elapsed_time = time.time() - start_time
-
-            res = f'%d/%f/%f/%f' % (g, average_f, current_f, best_f)
-            print('gen/avg/cur/best', res)
+            result_text = '%d/%f/%f/%f' % (g, average_f, current_f, best_f)
+            print(f'gen/avg/cur/best : {result_text}')
             with open(fitness_path, 'a') as file:
                 file.write(f'{res}\n')
 
