@@ -86,7 +86,6 @@ class GA:
 
         with open(fitness_path, 'a') as file:
             file.write('gen/avg/cur/best\n')
-            file.flush()
 
         g = 0
         P = self.P
@@ -114,7 +113,9 @@ class GA:
 
         while g < max_generations: 
             start_time = time.time()
+
             fitness = np.zeros(self.pop_size)
+            results_full = np.zeros(self.pop_size)
 
             print(f'Generation {g}')
             print(f'Evaluating individuals: {len(P)}')
@@ -128,7 +129,8 @@ class GA:
                 s.run_solution(generation=g, local_id=i)
             
             # request fitness from simulator
-            fitness = np.array(self.request_client.start())
+            results_full = self.request_client.start()
+            fitness = results_full[:,0]
 
             current_f = np.max(fitness)
             average_f = np.mean(fitness)
@@ -153,9 +155,13 @@ class GA:
             print("Saving population")
             save_pop = []
             for i, s in enumerate(P):
+                
+                # /fitness /coverage /coverageReward /IC /PCt0 /PCt1
+                res = results_full[i,:]
+                res_str = (', '.join(['%f']*len(res))) % tuple(res)
+
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\n' % (g, i, s.fitness))  
-                    file.flush()
+                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\tResults%s\n' % (g, i, s.fitness, res_str))  
 
                 save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
@@ -170,7 +176,6 @@ class GA:
             print('gen/avg/cur/best', res)
             with open(fitness_path, 'a') as file:
                 file.write(f'{res}\n')
-                file.flush()
 
             if (i > max_generations):
                 break

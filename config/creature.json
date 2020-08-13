@@ -3,8 +3,7 @@
     "vae.model.fromdisk": true,
     "vae.obs.size": 64,
     "vae.latent.size": 64,
-    "joints.size": 5,
+    "joints.size": 12,
     "brushes.size": 1,
-    "vision.local": false,
     "cpg.enabled": true
 }

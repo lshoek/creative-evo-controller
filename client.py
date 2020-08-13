@@ -122,7 +122,11 @@ class Client():
 	
 	from typing import List, Any
 	def __dispatch_fitness(self, addr:str, *args: List[Any]):
-		self.fitness = args
+		info = addr.split('/')
+		numEntries = int(info[2])
+		numStats = int(info[3])
+		f = np.reshape(args, (numEntries, numStats))
+		self.fitness = f
 		self.finished = True
 
 	def __dispatch_start_packets(self, addr, packets=None):
