@@ -11,7 +11,7 @@ import json
 import os
 from datetime import datetime
 from es import CMAES
-from client import Client
+from client import Client, ClientType
 from utils import compute_centered_ranks
 
 def set_controller_weights(controller, weights):
@@ -81,42 +81,43 @@ class GA:
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
             
-        fitness_path = os.path.join(results_dir, 'fitness.txt')
-        ind_fitness_path = os.path.join(results_dir, 'ind_fitness.txt')
-        solver_path = os.path.join(results_dir, "solver.pkl")
+        fitness_path = os.path.join(results_dir, 'fitness.txt') # most important fitness results per run (for plotting)
+        ind_fitness_path = os.path.join(results_dir, 'ind_fitness.txt') # more detailed fitness results per individual
+        solver_path = os.path.join(results_dir, "solver.pkl") # contains the current population
 
-        with open(fitness_path, 'a') as file:
-            file.write('gen/avg/cur/best\n')
-
-        g = 0
+        current_generation = 0
         P = self.P
-        pop_name = os.path.join(results_dir, 'population.p')
         best_f = -sys.maxsize
 
         # initialize controller instance to be saved
         from models.controller import Controller
         best_controller = Controller(P[0].input_size, P[0].output_size)
 
-        # instantiate a separate client to request fitness from simulator
-        from client import Client, ClientType
-
         # Load previously saved population
-        if os.path.exists(pop_name):
-            pop_tmp = torch.load(pop_name)
-            print(f"Loading existing population {pop_name}, {len(pop_tmp)} individuals")
+        if os.path.exists(solver_path):
+            self.solver = pickle.load(open(solver_path, 'rb'))
+            new_results = self.solver.result()
+            best_f = new_results[1]
 
-            idx = 0
-            for s in pop_tmp:
-                P[idx].rollout_gen.controller.load_state_dict(s['controller'].copy())
-                g = s['generation'] + 1
-                idx+=1
+            if os.path.exists(fitness_path):
+                with open(fitness_path, 'r') as f:
+                    lines = f.read().splitlines()
+                    last_line = lines[-1]
+                    current_generation = int(last_line.split('/')[0])
+        
+        # start from scratch
+        else:
+            with open(fitness_path, 'a') as file:
+                file.write('GEN/AVG/CUR/BEST\n')
+            with open(fitness_path, 'a') as file:
+                file.write('[fitness, coverage, coverageReward, IC, PCt0, PCt1]\n')
 
-        while g < max_generations: 
+        while current_generation < max_generations: 
 
             fitness = np.zeros(self.pop_size)
             results_full = np.zeros(self.pop_size)
 
-            print(f'Generation {g}')
+            print(f'Generation {current_generation}')
             print(f'Evaluating individuals: {len(P)}')
 
             # ask the ES to give us a set of candidate solutions
@@ -125,11 +126,14 @@ class GA:
             # evaluate all candidates
             for i, s in enumerate(P):  
                 s.set_controller_weights(solutions[i])
-                s.run_solution(generation=g, local_id=i)
+                s.run_solution(generation=current_generation, local_id=i)
             
             # request fitness from simulator
             results_full = Client(ClientType.REQUEST).start()
             fitness = results_full[:,0]
+
+            for i, s in enumerate(P):
+                s.fitness = fitness[i]
 
             current_f = np.max(fitness)
             average_f = np.mean(fitness)
@@ -141,7 +145,6 @@ class GA:
 
             max_index = np.argmax(fitness)
             new_results = self.solver.result()
-            current_best = new_results[1]
 
             # process results
             if current_f > best_f:
@@ -152,25 +155,16 @@ class GA:
                 pickle.dump(self.solver, open(solver_path, 'wb'))
                 best_f = current_f
 
-            print("Saving population")
-            save_pop = []
+            print("Reporting current generation fitness...")
             for i, s in enumerate(P):
-                
                 # /fitness /coverage /coverageReward /IC /PCt0 /PCt1
                 res = results_full[i,:]
                 res_str = (', '.join(['%.6f']*len(res))) % tuple(res)
 
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\tResults\t%s\n' % (g, i, s.fitness, res_str))  
+                    file.write('Gen\t%d\tId\tResults\t%s\n' % (current_generation, i, res_str))  
 
-                save_pop += [{
-                     'controller': s.rollout_gen.controller.state_dict(), 
-                     'fitness':fitness, 
-                     'generation':g
-                }]
-            torch.save(save_pop, os.path.join(results_dir, 'population.p'))
-
-            res_str = '%d/%f/%f/%f' % (g, average_f, current_f, best_f)
+            res_str = '%d/%f/%f/%f' % (current_generation, average_f, current_f, best_f)
             print(f'gen/avg/cur/best : {res_str}')
             with open(fitness_path, 'a') as file:
                 file.write(f'{res_str}\n')
@@ -179,7 +173,7 @@ class GA:
                 break
 
             gc.collect()
-            g += 1
+            current_generation += 1
 
         print('Finished')
    
