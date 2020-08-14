@@ -131,6 +131,9 @@ class GA:
             results_full = Client(ClientType.REQUEST).start()
             fitness = results_full[:,0]
 
+            for i, s in enumerate(P):
+                s.fitness = fitness[i]
+
             current_f = np.max(fitness)
             average_f = np.mean(fitness)
             print(f'Current best: {current_f}\nCurrent average: {average_f}\n All-time best: {best_f}')
@@ -161,7 +164,7 @@ class GA:
                 res_str = (', '.join(['%.6f']*len(res))) % tuple(res)
 
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\t%d\tFitness\t%f\tResults\t%s\n' % (g, i, s.fitness, res_str))  
+                    file.write('Gen\t%d\tId\tResults\t%s\n' % (g, i, res_str))  
 
                 save_pop += [{
                      'controller': s.rollout_gen.controller.state_dict(), 
