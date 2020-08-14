@@ -162,7 +162,7 @@ class GA:
                 res_str = (', '.join(['%.6f']*len(res))) % tuple(res)
 
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\tResults\t%s\n' % (current_generation, i, res_str))  
+                    file.write('Gen\t%d\tId\t%dResults\t%s\n' % (current_generation, i, res_str))  
 
             res_str = '%d/%f/%f/%f' % (current_generation, average_f, current_f, best_f)
             print(f'gen/avg/cur/best : {res_str}')
