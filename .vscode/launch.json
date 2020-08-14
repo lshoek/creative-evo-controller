@@ -5,11 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "DebugMain",
+            "name": "DebugMain_Home",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args" : ["--timelimit", "120", "--pop_size", "32" /*, "--ga_id", ""*/],
+            "args" : ["--timelimit", "120", "--pop_size", "32"],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "DebugMain_Professor",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args" : ["--timelimit", "120", "--pop_size", "32" , "--ga_id", "20200813_184745"],
             "console": "integratedTerminal"
         }
     ]
