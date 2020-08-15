@@ -71,7 +71,7 @@ class Client():
 		self.handshake = True
 		self.finished = False
 		self.terminate = False
-		self.save_obs = True
+		self.save_obs = False
 
 		self.fitness = []
 		self.clock = 0.0

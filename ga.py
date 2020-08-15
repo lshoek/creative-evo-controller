@@ -10,9 +10,8 @@ import copy
 import json
 import os
 from datetime import datetime
-from es import CMAES
+from es import CMAES, compute_centered_ranks
 from client import Client, ClientType
-from utils import compute_centered_ranks
 
 def set_controller_weights(controller, weights):
     new_params = torch.tensor(weights, dtype=torch.float32).cuda()
@@ -47,8 +46,8 @@ class GA:
                 input_size += 1
                 output_size += 1
 
-        num_controller_params = input_size * output_size # assuming a single layer
-        print(f'Number of controller parameters: {num_controller_params}')
+        self.num_controller_params = input_size * output_size # assuming a single layer
+        print(f'Number of controller parameters: {self.num_controller_params}')
 
         # load vision module
         from models.vae import VAE
@@ -67,12 +66,9 @@ class GA:
             self.P.append(GAIndividual(
                 self.init_time, input_size, output_size, obs_size, 
                 compressor=vae, cpg_enabled=cpg_enabled, device=device, time_limit=timelimit))
-        
-        # initialize cma es
-        sigma_init = 4.0
-        self.solver = CMAES(num_params=num_controller_params, sigma_init=sigma_init, popsize=pop_size)
 
-    def run(self, max_generations, folder, ga_id=''):
+
+    def run(self, max_generations, folder, ga_id='', init_solution_id=''):
         if (ga_id == ''):
             ga_id = self.init_time
         
@@ -84,6 +80,7 @@ class GA:
         fitness_path = os.path.join(results_dir, 'fitness.txt') # most important fitness results per run (for plotting)
         ind_fitness_path = os.path.join(results_dir, 'ind_fitness.txt') # more detailed fitness results per individual
         solver_path = os.path.join(results_dir, "solver.pkl") # contains the current population
+        init_solution_path = os.path.join(os.path.join(folder, init_solution_id), "solver.pkl") # path to initial solution solver
 
         current_generation = 0
         P = self.P
@@ -93,8 +90,10 @@ class GA:
         from models.controller import Controller
         best_controller = Controller(P[0].input_size, P[0].output_size)
 
-        # Load previously saved population
+        # initialize cma es (start from scratch or load previously saved solver/population)
+        resume = False
         if os.path.exists(solver_path):
+            resume = True
             self.solver = pickle.load(open(solver_path, 'rb'))
             new_results = self.solver.result()
             best_f = new_results[1]
@@ -104,12 +103,18 @@ class GA:
                     lines = f.read().splitlines()
                     last_line = lines[-1]
                     current_generation = int(last_line.split('/')[0])
-        
-        # start from scratch
+        # start from scratch but with an initial solution param            
+        elif os.path.exists(init_solution_path):
+            tmp_solver = pickle.load(open(init_solution_path, 'rb'))
+            self.solver = CMAES(num_params=self.num_controller_params, solution_init=tmp_solver.best_param(), sigma_init=0.1, popsize=self.pop_size)
+        # completely start from scratch
         else:
+            self.solver = CMAES(num_params=self.num_controller_params, sigma_init=0.1, popsize=self.pop_size)
+        
+        if not resume:
             with open(fitness_path, 'a') as file:
                 file.write('GEN/AVG/CUR/BEST\n')
-            with open(fitness_path, 'a') as file:
+            with open(ind_fitness_path, 'a') as file:
                 file.write('[fitness, coverage, coverageReward, IC, PCt0, PCt1]\n')
 
         while current_generation < max_generations: 

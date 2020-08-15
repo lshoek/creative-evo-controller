@@ -41,6 +41,9 @@ def parse_args():
     parser.add_argument('--ga_id', type=str, default='', metavar='N',
         help='resume training')
 
+    parser.add_argument('--ga_init_solution_id', type=str, default='', metavar='N',
+        help='grab best solution as starting point')
+
     return parser.parse_args()
 
 def main(argv):
@@ -59,7 +62,7 @@ def main(argv):
     print(device)
 
     ga = GA(args.timelimit, args.pop_size, device)
-    ga.run(args.generations, args.folder, args.ga_id)
+    ga.run(args.generations, args.folder, args.ga_id, args.ga_init_solution_id)
 
 if __name__ == '__main__':
     main(sys.argv)
