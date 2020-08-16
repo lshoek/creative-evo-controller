@@ -80,6 +80,7 @@ class GA:
         fitness_path = os.path.join(results_dir, 'fitness.txt') # most important fitness results per run (for plotting)
         ind_fitness_path = os.path.join(results_dir, 'ind_fitness.txt') # more detailed fitness results per individual
         solver_path = os.path.join(results_dir, "solver.pkl") # contains the current population
+        best_solver_path = os.path.join(results_dir, "best_solver.pkl") # contains the current population
         init_solution_path = os.path.join(os.path.join(folder, init_solution_id), "solver.pkl") # path to initial solution solver
 
         current_generation = 0
@@ -152,12 +153,13 @@ class GA:
             new_results = self.solver.result()
 
             # process results
+            pickle.dump(self.solver, open(solver_path, 'wb'))
             if current_f > best_f:
                 set_controller_weights(best_controller, solutions[max_index])
                 torch.save(best_controller, os.path.join(results_dir, 'best_controller.pth'))
 
                 # Save solver and change level to a random one
-                pickle.dump(self.solver, open(solver_path, 'wb'))
+                pickle.dump(self.solver, open(best_solver_path, 'wb'))
                 best_f = current_f
 
             print("Reporting current generation fitness...")
