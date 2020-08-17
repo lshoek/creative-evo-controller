@@ -1,8 +1,8 @@
 {
-    "vae.model.path": "saved_models/vae/conv_vae_omniglot_obs.pth",
+    "vae.model.path": "saved_models/vae/conv_vae_obs_ultimate.pth",
     "vae.model.fromdisk": true,
     "vae.obs.size": 64,
-    "vae.latent.size": 16,
+    "vae.latent.size": 32,
     "joints.size": 12,
     "brushes.size": 1,
     "cpg.enabled": true

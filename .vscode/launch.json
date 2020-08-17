@@ -17,7 +17,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args" : ["--timelimit", "120", "--pop_size", "32" , "--ga_id", "20200813_184745"],
+            "args" : ["--timelimit", "120", "--pop_size", "32" /*, "--ga_id", "20200813_184745"*/],
             "console": "integratedTerminal"
         }
     ]

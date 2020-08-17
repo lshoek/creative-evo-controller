@@ -1,5 +1,5 @@
 # App specific
-data/obs/temp/*
+data/obs/*
 data/omniglot/*
 data/validate/out/*
 saved_models/vae/intermediate/*
