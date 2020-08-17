@@ -10,7 +10,7 @@ import copy
 import json
 import os
 from datetime import datetime
-from es import CMAES, compute_centered_ranks
+from es import CMAES
 from client import Client, ClientType
 
 def set_controller_weights(controller, weights):
@@ -114,9 +114,9 @@ class GA:
         
         if not resume:
             with open(fitness_path, 'a') as file:
-                file.write('GEN/AVG/CUR/BEST\n')
+                file.write('gen/avg/cur/best\n')
             with open(ind_fitness_path, 'a') as file:
-                file.write('[fitness, coverage, coverageReward, IC, PCt0, PCt1]\n')
+                file.write('gen/id/fitness/coverage/coverageReward/IC/PCt0/PCt1\n')
 
         while current_generation < max_generations: 
 
@@ -143,11 +143,10 @@ class GA:
 
             current_f = np.max(fitness)
             average_f = np.mean(fitness)
-            print(f'Current best: {current_f}\nCurrent average: {average_f}\n All-time best: {best_f}')
+            print(f'Current best: {current_f}\nCurrent average: {average_f}\nAll-time best: {best_f}')
 
             # return rewards to ES for param update
-            centered_ranks = compute_centered_ranks(fitness)
-            self.solver.tell(centered_ranks)
+            self.solver.tell(fitness)
 
             max_index = np.argmax(fitness)
             new_results = self.solver.result()
@@ -162,14 +161,13 @@ class GA:
                 pickle.dump(self.solver, open(best_solver_path, 'wb'))
                 best_f = current_f
 
-            print("Reporting current generation fitness...")
             for i, s in enumerate(P):
-                # /fitness /coverage /coverageReward /IC /PCt0 /PCt1
+                # fitness/coverage/coverageReward/IC/PCt0/PCt1
                 res = results_full[i,:]
-                res_str = (', '.join(['%.6f']*len(res))) % tuple(res)
+                res_str = ('/'.join(['%.6f']*len(res))) % tuple(res)
 
                 with open(ind_fitness_path, 'a') as file:
-                    file.write('Gen\t%d\tId\t%dResults\t%s\n' % (current_generation, i, res_str))  
+                    file.write('%d/%d/%s\n' % (current_generation, i, res_str))  
 
             res_str = '%d/%f/%f/%f' % (current_generation, average_f, current_f, best_f)
             print(f'gen/avg/cur/best : {res_str}')
