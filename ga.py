@@ -14,10 +14,15 @@ from es import CMAES
 from client import Client, ClientType
 
 def set_controller_weights(controller, weights):
-    new_params = torch.tensor(weights, dtype=torch.float32).cuda()
     params = controller.state_dict()
-    shape = params['fc.weight'].shape
-    controller.state_dict()['fc.weight'].data.copy_(new_params.view(shape))
+    shape_weights = params['fc.weight'].shape
+    num_bias_weights = len(params['fc.bias'])
+    
+    new_params = torch.tensor(weights[:-num_bias_weights], dtype=torch.float32).cuda()
+    new_params_bias = torch.tensor(weights[-num_bias_weights:], dtype=torch.float32).cuda()
+
+    controller.state_dict()['fc.weight'].data.copy_(new_params.view(shape_weights))
+    controller.state_dict()['fc.bias'].data.copy_(new_params_bias)
     return
 
 class GA:
@@ -46,9 +51,6 @@ class GA:
                 input_size += 1
                 output_size += 1
 
-        self.num_controller_params = input_size * output_size # assuming a single layer
-        print(f'Number of controller parameters: {self.num_controller_params}')
-
         # load vision module
         from models.vae import VAE
         vae = VAE(latent_size).cuda()
@@ -66,6 +68,10 @@ class GA:
             self.P.append(GAIndividual(
                 self.init_time, input_size, output_size, obs_size, 
                 compressor=vae, cpg_enabled=cpg_enabled, device=device, time_limit=timelimit))
+
+        # report controller parameters
+        self.num_controller_params = input_size * output_size + output_size
+        print(f'Number of controller parameters: {self.num_controller_params}')
 
 
     def run(self, max_generations, folder, ga_id='', init_solution_id=''):
@@ -131,7 +137,7 @@ class GA:
 
             # evaluate all candidates
             for i, s in enumerate(P):  
-                s.set_controller_weights(solutions[i])
+                set_controller_weights(s.controller, solutions[i])
                 s.run_solution(generation=current_generation, local_id=i)
             
             # request fitness from simulator
@@ -162,7 +168,7 @@ class GA:
                 best_f = current_f
 
             for i, s in enumerate(P):
-                # fitness/coverage/coverageReward/IC/PCt0/PCt1
+                # fitness/coverage/coverageReward/IC/PC/PCt0/PCt1
                 res = results_full[i,:]
                 res_str = ('/'.join(['%.6f']*len(res))) % tuple(res)
 
