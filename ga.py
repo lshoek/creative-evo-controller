@@ -122,7 +122,7 @@ class GA:
             with open(fitness_path, 'a') as file:
                 file.write('gen/avg/cur/best\n')
             with open(ind_fitness_path, 'a') as file:
-                file.write('gen/id/fitness/coverage/coverageReward/IC/PCt0/PCt1\n')
+                file.write('gen/id/fitness/coverage/coverageReward/IC/PC/PCt0/PCt1\n')
 
         while current_generation < max_generations: 
 
