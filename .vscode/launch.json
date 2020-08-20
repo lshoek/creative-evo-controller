@@ -9,7 +9,7 @@
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
-            "args" : ["--timelimit", "240", "--pop_size", "32", /*"--ga_id", "", "--ga_init_solution_id", "__SAVE__/20200814_133457"*/],
+            "args" : ["--timelimit", "240", "--pop_size", "32", "--generations", "400" /*"--ga_id", "", "--ga_init_solution_id", "__SAVE__/20200814_133457"*/],
             "console": "integratedTerminal"
         },
         {
