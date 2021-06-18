@@ -1,5 +1,5 @@
 # creative-evo-controller
-## Evolving arbitrary virtual embodied agents using external artifact evaluations 
+## Evolving virtual embodied agents using external artifact evaluations 
 
 Master's thesis project (WORK IN PROGRESS)
 
